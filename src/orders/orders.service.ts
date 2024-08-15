@@ -7,14 +7,17 @@ import {
 } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 import { ClientProxy, RpcException } from "@nestjs/microservices";
+import { firstValueFrom } from "rxjs";
 
 import {
   ChangeOrderStatusDto,
   CreateOrderDto,
   OrderPaginationDto,
 } from "./dto";
-import { PRODUCT_SERVICE } from "src/config";
-import { firstValueFrom } from "rxjs";
+
+import { PRODUCT_SERVICE } from "../config";
+
+import { type Product } from "./interfaces";
 
 @Injectable()
 export class OrdersService extends PrismaClient implements OnModuleInit {
@@ -35,13 +38,19 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
     }
   }
 
+  private async validateProducts(productIds: number[]) {
+    const products: Product[] = await firstValueFrom(
+      this.productsClient.send({ cmd: "validate_products" }, productIds)
+    );
+
+    return products;
+  }
+
   async create(createOrderDto: CreateOrderDto) {
     try {
       // 1. Confirm products exist
       const productIds = createOrderDto.items.map((item) => item.productId);
-      const products: any[] = await firstValueFrom(
-        this.productsClient.send({ cmd: "validate_products" }, productIds)
-      );
+      const products = await this.validateProducts(productIds);
 
       // 2. Calculate values
       const totalAmount = createOrderDto.items.reduce((acc, orderItem) => {
@@ -94,10 +103,6 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
         message: "Check logs",
       });
     }
-
-    // return this.order.create({
-    //   data: createOrderDto,
-    // });
   }
 
   async findAll(orderPaginationDto: OrderPaginationDto) {
@@ -124,7 +129,19 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
   async findOne(id: string) {
     const order = await this.order.findFirst({
       where: { id },
+      include: {
+        OrderItem: {
+          select: {
+            price: true,
+            quantity: true,
+            productId: true,
+          },
+        },
+      },
     });
+
+    const productsIds = order.OrderItem.map((item) => item.productId);
+    const products = await this.validateProducts(productsIds);
 
     if (!order)
       throw new RpcException({
@@ -132,7 +149,13 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
         message: `Order with id ${id} not found`,
       });
 
-    return order;
+    return {
+      ...order,
+      OrderItem: order.OrderItem.map((item) => ({
+        ...item,
+        name: products.find((product) => product.id === item.productId).name,
+      })),
+    };
   }
 
   async changeOrderStatus(changeOrderStatusDto: ChangeOrderStatusDto) {
