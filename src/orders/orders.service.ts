@@ -15,7 +15,7 @@ import {
   OrderPaginationDto,
 } from "./dto";
 
-import { PRODUCT_SERVICE } from "../config";
+import { NATS_SERVICE } from "../config";
 
 import { type Product } from "./interfaces";
 
@@ -23,9 +23,7 @@ import { type Product } from "./interfaces";
 export class OrdersService extends PrismaClient implements OnModuleInit {
   private readonly logger = new Logger("OrdersService");
 
-  constructor(
-    @Inject(PRODUCT_SERVICE) private readonly productsClient: ClientProxy
-  ) {
+  constructor(@Inject(NATS_SERVICE) private readonly client: ClientProxy) {
     super();
   }
 
@@ -40,7 +38,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
 
   private async validateProducts(productIds: number[]) {
     const products: Product[] = await firstValueFrom(
-      this.productsClient.send({ cmd: "validate_products" }, productIds)
+      this.client.send({ cmd: "validate_products" }, productIds)
     );
 
     return products;
