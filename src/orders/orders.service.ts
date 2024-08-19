@@ -17,7 +17,7 @@ import {
 
 import { NATS_SERVICE } from "../config";
 
-import { type Product } from "./interfaces";
+import { OrderWithProducts, PaymentSession, type Product } from "./interfaces";
 
 @Injectable()
 export class OrdersService extends PrismaClient implements OnModuleInit {
@@ -167,5 +167,21 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       where: { id },
       data: { status },
     });
+  }
+
+  async createPaymentSession(order: OrderWithProducts) {
+    const paymentSession: PaymentSession = await firstValueFrom(
+      this.client.send("create.payment.session", {
+        orderId: order.id,
+        currency: "usd",
+        items: order.OrderItem.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+      })
+    );
+
+    return paymentSession;
   }
 }
