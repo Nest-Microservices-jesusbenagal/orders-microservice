@@ -5,7 +5,7 @@ import {
   Logger,
   OnModuleInit,
 } from "@nestjs/common";
-import { PrismaClient } from "@prisma/client";
+import { OrderStatus, PrismaClient } from "@prisma/client";
 import { ClientProxy, RpcException } from "@nestjs/microservices";
 import { firstValueFrom } from "rxjs";
 
@@ -13,11 +13,16 @@ import {
   ChangeOrderStatusDto,
   CreateOrderDto,
   OrderPaginationDto,
+  PaidOrderDto,
 } from "./dto";
 
 import { NATS_SERVICE } from "../config";
 
-import { OrderWithProducts, PaymentSession, type Product } from "./interfaces";
+import {
+  type OrderWithProducts,
+  type PaymentSession,
+  type Product,
+} from "./interfaces";
 
 @Injectable()
 export class OrdersService extends PrismaClient implements OnModuleInit {
@@ -183,5 +188,34 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
     );
 
     return paymentSession;
+  }
+
+  async paidOrder(paidOrderDto: PaidOrderDto) {
+    try {
+      const order = await this.order.update({
+        where: { id: paidOrderDto.orderId },
+        data: {
+          status: OrderStatus.PAID,
+          paid: true,
+          paidAt: new Date(),
+          stripeChargeId: paidOrderDto.stripePaymentId,
+          OrderReceipt: {
+            create: {
+              receiptUrl: paidOrderDto.receiptUrl,
+            },
+          },
+        },
+      });
+
+      this.logger.log(`Order ${order.id} has been paid`);
+
+      return order;
+    } catch (error) {
+      this.logger.error(error);
+      throw new RpcException({
+        status: HttpStatus.BAD_GATEWAY,
+        message: "Check logs",
+      });
+    }
   }
 }
